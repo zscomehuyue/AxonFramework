@@ -14,8 +14,9 @@
  * limitations under the License.
  */
 
-package org.axonframework.commandhandling.gateway;
+package org.axonframework.reactive;
 
+import org.axonframework.commandhandling.gateway.CommandGateway;
 import org.axonframework.messaging.Message;
 import reactor.core.publisher.Mono;
 

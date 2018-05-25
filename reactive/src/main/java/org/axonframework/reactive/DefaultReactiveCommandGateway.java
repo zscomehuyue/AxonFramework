@@ -14,12 +14,14 @@
  * limitations under the License.
  */
 
-package org.axonframework.commandhandling.gateway;
+package org.axonframework.reactive;
 
 import org.axonframework.commandhandling.CommandBus;
 import org.axonframework.commandhandling.CommandMessage;
 import org.axonframework.commandhandling.callbacks.FailureLoggingCallback;
 import org.axonframework.commandhandling.callbacks.FutureCallback;
+import org.axonframework.commandhandling.gateway.AbstractCommandGateway;
+import org.axonframework.commandhandling.gateway.RetryScheduler;
 import org.axonframework.messaging.MessageDispatchInterceptor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
