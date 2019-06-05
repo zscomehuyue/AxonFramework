@@ -192,6 +192,14 @@ public class EmbeddedEventStore extends AbstractEventStore {
         }
     }
 
+    /**
+     * Mechanism to notify event processors on this node that there are new events which have been published by other
+     * nodes which are available for consumption by this node.
+     */
+    public void notifyProcessorsOfNewEvents() {
+        producer.notifyProcessorsOfNewEvents();
+    }
+
     private class EventProducer implements AutoCloseable {
 
         private final Lock lock = new ReentrantLock();
@@ -287,6 +295,10 @@ public class EmbeddedEventStore extends AbstractEventStore {
             } finally {
                 consumerLock.unlock();
             }
+        }
+
+        private void notifyProcessorsOfNewEvents() {
+            fetchIfWaiting();
         }
 
         private void trimCache() {
