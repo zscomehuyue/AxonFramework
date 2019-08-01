@@ -46,6 +46,7 @@ import org.slf4j.LoggerFactory;
 
 import java.time.Instant;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
@@ -413,7 +414,22 @@ public class AxonServerEventStore extends AbstractEventStore {
 
         @Override
         protected void storeSnapshot(DomainEventMessage<?> snapshot, Serializer serializer) {
-            eventStoreClient.appendSnapshot(context, map(snapshot, serializer)).whenComplete((c, e) -> {
+            if (CurrentUnitOfWork.isStarted()) {
+                CurrentUnitOfWork.get().afterCommit(u -> doStoreSnapshot(snapshot, serializer));
+            } else {
+                doStoreSnapshot(snapshot, serializer);
+            }
+        }
+
+        /**
+         * Sends the snapshot to AxonServer.
+         *
+         * @param snapshot   The event to send
+         * @param serializer The serializer to serialize the payload and metadata with
+         * @return a CompletableFuture that will report the result, when available
+         */
+        private CompletableFuture<Confirmation> doStoreSnapshot(DomainEventMessage<?> snapshot, Serializer serializer) {
+            return eventStoreClient.appendSnapshot(context, map(snapshot, serializer)).whenComplete((c, e) -> {
                 if (e != null) {
                     logger.warn("Error occurred while creating a snapshot", e);
                 } else if (c != null) {
