@@ -17,9 +17,9 @@
 package org.axonframework.disruptor.commandhandling;
 
 import com.lmax.disruptor.RingBuffer;
-import org.axonframework.commandhandling.CommandCallback;
 import org.axonframework.commandhandling.CommandMessage;
 import org.axonframework.commandhandling.CommandResultMessage;
+import org.axonframework.messaging.ResultHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -31,18 +31,16 @@ import static org.axonframework.commandhandling.GenericCommandResultMessage.asCo
  * Wrapper for command handler Callbacks that detects blacklisted aggregates and starts a cleanup process when an
  * aggregate is blacklisted.
  *
- * @param <R> The return value of the Command
- * @param <C> The type of payload of the dispatched command
  * @author Allard Buijze
  * @since 2.0
  */
-public class BlacklistDetectingCallback<C, R> implements CommandCallback<C, R> {
+public class BlacklistDetectingCallback implements ResultHandler<CommandMessage<?>, CommandResultMessage<?>> {
 
     private static final Logger logger = LoggerFactory.getLogger(BlacklistDetectingCallback.class);
 
-    private final CommandCallback<? super C, R> delegate;
+    private final ResultHandler<CommandMessage<?>, CommandResultMessage<?>> delegate;
     private final RingBuffer<CommandHandlingEntry> ringBuffer;
-    private final BiConsumer<CommandMessage<? extends C>, CommandCallback<? super C, R>> retryMethod;
+    private final BiConsumer<CommandMessage<?>, ResultHandler<CommandMessage<?>, CommandResultMessage<?>>> retryMethod;
     private final boolean rescheduleOnCorruptState;
 
     /**
@@ -56,9 +54,9 @@ public class BlacklistDetectingCallback<C, R> implements CommandCallback<C, R> {
      * @param rescheduleOnCorruptState Whether the command should be retried if it has been executed against corrupt
      *                                 state
      */
-    public BlacklistDetectingCallback(CommandCallback<? super C, R> delegate,
+    public BlacklistDetectingCallback(ResultHandler<CommandMessage<?>, CommandResultMessage<?>> delegate,
                                       RingBuffer<CommandHandlingEntry> ringBuffer,
-                                      BiConsumer<CommandMessage<? extends C>, CommandCallback<? super C, R>>
+                                      BiConsumer<CommandMessage<?>, ResultHandler<CommandMessage<?>, CommandResultMessage<?>>>
                                               retryMethod,
                                       boolean rescheduleOnCorruptState) {
         this.delegate = delegate;
@@ -68,8 +66,8 @@ public class BlacklistDetectingCallback<C, R> implements CommandCallback<C, R> {
     }
 
     @Override
-    public void onResult(CommandMessage<? extends C> commandMessage,
-                         CommandResultMessage<? extends R> commandResultMessage) {
+    public void onResult(CommandMessage<?> commandMessage,
+                         CommandResultMessage<?> commandResultMessage) {
         if (!commandResultMessage.isExceptional()) {
             if (delegate != null) {
                 delegate.onResult(commandMessage, commandResultMessage);
@@ -94,6 +92,16 @@ public class BlacklistDetectingCallback<C, R> implements CommandCallback<C, R> {
                             cause);
             }
         }
+    }
+
+    @Override
+    public void onComplete(CommandMessage<?> message) {
+        // no action required
+    }
+
+    @Override
+    public void onError(CommandMessage<?> message, Throwable error) {
+        onResult(message, asCommandResultMessage(error));
     }
 
     /**

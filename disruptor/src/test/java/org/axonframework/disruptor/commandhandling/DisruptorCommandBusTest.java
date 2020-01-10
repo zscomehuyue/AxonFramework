@@ -18,7 +18,12 @@ package org.axonframework.disruptor.commandhandling;
 
 import com.lmax.disruptor.SleepingWaitStrategy;
 import com.lmax.disruptor.dsl.ProducerType;
-import org.axonframework.commandhandling.*;
+import org.axonframework.commandhandling.CommandCallback;
+import org.axonframework.commandhandling.CommandMessage;
+import org.axonframework.commandhandling.CommandResultMessage;
+import org.axonframework.commandhandling.DuplicateCommandHandlerResolution;
+import org.axonframework.commandhandling.DuplicateCommandHandlerResolver;
+import org.axonframework.commandhandling.NoHandlerForCommandException;
 import org.axonframework.commandhandling.callbacks.FutureCallback;
 import org.axonframework.common.Registration;
 import org.axonframework.common.transaction.Transaction;
@@ -28,25 +33,40 @@ import org.axonframework.deadline.GenericDeadlineMessage;
 import org.axonframework.deadline.annotation.DeadlineHandler;
 import org.axonframework.disruptor.commandhandling.utils.MockException;
 import org.axonframework.disruptor.commandhandling.utils.SomethingDoneEvent;
-import org.axonframework.eventhandling.*;
+import org.axonframework.eventhandling.DomainEventMessage;
+import org.axonframework.eventhandling.EventMessage;
+import org.axonframework.eventhandling.GenericDomainEventMessage;
+import org.axonframework.eventhandling.TrackingEventStream;
+import org.axonframework.eventhandling.TrackingToken;
 import org.axonframework.eventsourcing.EventSourcingHandler;
 import org.axonframework.eventsourcing.GenericAggregateFactory;
 import org.axonframework.eventsourcing.SnapshotTrigger;
 import org.axonframework.eventsourcing.SnapshotTriggerDefinition;
 import org.axonframework.eventsourcing.eventstore.DomainEventStream;
 import org.axonframework.eventsourcing.eventstore.EventStore;
-import org.axonframework.messaging.*;
+import org.axonframework.messaging.InterceptorChain;
+import org.axonframework.messaging.Message;
+import org.axonframework.messaging.MessageDispatchInterceptor;
+import org.axonframework.messaging.MessageDispatchInterceptorChain;
+import org.axonframework.messaging.MessageHandler;
+import org.axonframework.messaging.MessageHandlerInterceptor;
+import org.axonframework.messaging.ResultAwareMessageDispatchInterceptor;
+import org.axonframework.messaging.ResultMessage;
 import org.axonframework.messaging.annotation.ClasspathParameterResolverFactory;
 import org.axonframework.messaging.annotation.MessageHandlerInvocationException;
 import org.axonframework.messaging.annotation.ParameterResolverFactory;
 import org.axonframework.messaging.unitofwork.RollbackConfigurationType;
 import org.axonframework.messaging.unitofwork.UnitOfWork;
-import org.axonframework.modelling.command.*;
+import org.axonframework.modelling.command.Aggregate;
+import org.axonframework.modelling.command.AggregateIdentifier;
+import org.axonframework.modelling.command.AggregateScopeDescriptor;
+import org.axonframework.modelling.command.Repository;
+import org.axonframework.modelling.command.TargetAggregateIdentifier;
 import org.axonframework.modelling.saga.SagaScopeDescriptor;
 import org.axonframework.monitoring.MessageMonitor;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
@@ -54,12 +74,15 @@ import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
 
 import java.lang.reflect.Executable;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
@@ -67,8 +90,25 @@ import java.util.function.Consumer;
 import static java.util.Collections.singletonList;
 import static org.axonframework.commandhandling.GenericCommandMessage.asCommandMessage;
 import static org.axonframework.modelling.command.AggregateLifecycle.apply;
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.anyInt;
+import static org.mockito.Mockito.anyList;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.eq;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.isA;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
+import static org.mockito.Mockito.when;
 
 /**
  * @author Allard Buijze
@@ -104,9 +144,15 @@ class DisruptorCommandBusTest {
     @SuppressWarnings("unchecked")
     @Test
     void testCallbackInvokedBeforeUnitOfWorkCleanup() throws Exception {
-        MessageHandlerInterceptor mockHandlerInterceptor = mock(MessageHandlerInterceptor.class);
-        MessageDispatchInterceptor mockDispatchInterceptor = mock(MessageDispatchInterceptor.class);
+        MessageHandlerInterceptor<CommandMessage<?>> mockHandlerInterceptor = mock(MessageHandlerInterceptor.class);
+        MessageDispatchInterceptor<CommandMessage<?>> mockDispatchInterceptor = mock(MessageDispatchInterceptor.class);
         when(mockDispatchInterceptor.handle(isA(CommandMessage.class))).thenAnswer(new Parameter(0));
+        when(mockDispatchInterceptor.handle(anyList())).thenReturn((i, m) -> m);
+        ResultAwareMessageDispatchInterceptor<Message<?>, Message<?>> resultAwareInterceptor = mock(ResultAwareMessageDispatchInterceptor.class);
+        doAnswer(i -> {
+            i.getArgument(2, MessageDispatchInterceptorChain.class).proceed(i.getArgument(0), i.getArgument(1));
+            return null;
+        }).when(resultAwareInterceptor).dispatch(any(), any(), any());
         ExecutorService customExecutor = Executors.newCachedThreadPool();
 
         testSubject = DisruptorCommandBus.builder()
@@ -119,6 +165,7 @@ class DisruptorCommandBusTest {
                                          .invokerThreadCount(2)
                                          .publisherThreadCount(3)
                                          .build();
+        testSubject.registerDispatchInterceptor(resultAwareInterceptor);
         testSubject.subscribe(StubCommand.class.getName(), stubHandler);
         GenericAggregateFactory<StubAggregate> aggregateFactory = new GenericAggregateFactory<>(StubAggregate.class);
         stubHandler.setRepository(testSubject.createRepository(eventStore, aggregateFactory, parameterResolverFactory));
@@ -143,8 +190,10 @@ class DisruptorCommandBusTest {
         customExecutor.shutdown();
         assertTrue(customExecutor.awaitTermination(5, TimeUnit.SECONDS));
         InOrder inOrder = inOrder(mockDispatchInterceptor, mockHandlerInterceptor, mockPrepareCommitConsumer,
-                                  mockAfterCommitConsumer, mockCleanUpConsumer, mockCallback);
-        inOrder.verify(mockDispatchInterceptor).handle(isA(CommandMessage.class));
+                                  mockAfterCommitConsumer, mockCleanUpConsumer, mockCallback,
+                                  resultAwareInterceptor);
+        inOrder.verify(mockDispatchInterceptor).handle(anyList());
+        inOrder.verify(resultAwareInterceptor).dispatch(eq(command), any(), any());
         inOrder.verify(mockHandlerInterceptor).handle(any(UnitOfWork.class), any(InterceptorChain.class));
         inOrder.verify(mockPrepareCommitConsumer).accept(isA(UnitOfWork.class));
         inOrder.verify(mockAfterCommitConsumer).accept(isA(UnitOfWork.class));

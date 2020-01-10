@@ -19,6 +19,11 @@ package org.axonframework.eventhandling;
 import org.axonframework.common.Registration;
 import org.axonframework.messaging.Message;
 import org.axonframework.messaging.MessageDispatchInterceptor;
+import org.axonframework.messaging.MessageDispatchInterceptorChain;
+import org.axonframework.messaging.MetaData;
+import org.axonframework.messaging.ResultAwareMessageDispatchInterceptor;
+import org.axonframework.messaging.ResultHandler;
+import org.axonframework.messaging.ResultHandlerAdapter;
 import org.axonframework.messaging.unitofwork.CurrentUnitOfWork;
 import org.axonframework.messaging.unitofwork.DefaultUnitOfWork;
 import org.axonframework.messaging.unitofwork.UnitOfWork;
@@ -27,17 +32,31 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InOrder;
 import org.mockito.Mockito;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+import java.util.Objects;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 
 import static java.util.Collections.emptyList;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.anyList;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyZeroInteractions;
+import static org.mockito.Mockito.when;
 
 /**
  * @author Rene de Waele
@@ -61,6 +80,54 @@ class AbstractEventBusTest {
     }
 
     @Test
+    void testInterceptorsAreInvokedBeforePublication() {
+        AtomicInteger invocationCounter = new AtomicInteger();
+        AtomicInteger completionCounter = new AtomicInteger();
+        testSubject.registerDispatchInterceptor((ResultAwareMessageDispatchInterceptor<EventMessage<?>, Message<?>>) (message, resultHandler, chain) -> {
+            invocationCounter.incrementAndGet();
+            chain.proceed(message.andMetaData(MetaData.with("key", "value")), new ResultHandlerAdapter<EventMessage<?>, Message<?>>(resultHandler) {
+                @Override
+                public void onComplete(EventMessage<?> message) {
+                    completionCounter.incrementAndGet();
+                    super.onComplete(message);
+                }
+            });
+        });
+
+        testSubject.publish(GenericEventMessage.asEventMessage("testing"));
+        assertEquals(1, invocationCounter.get());
+        assertEquals(0, completionCounter.get());
+
+        if (unitOfWork.isActive()) {
+            unitOfWork.commit();
+        }
+        assertEquals(1, invocationCounter.get());
+        assertEquals(1, completionCounter.get());
+
+        assertEquals(1, testSubject.committedEvents.size());
+        assertEquals("value", testSubject.committedEvents.get(0).getMetaData().get("key"));
+    }
+
+    @Test
+    void testInterceptorsAreInvokedBeforePublication_NoActiveUnitOfWork() {
+        unitOfWork.commit();
+
+        AtomicInteger invocationCounter = new AtomicInteger();
+        AtomicInteger completionCounter = new AtomicInteger();
+        testSubject.registerDispatchInterceptor((ResultAwareMessageDispatchInterceptor<EventMessage<?>, Message<?>>) (message, resultHandler, chain) -> {
+            invocationCounter.incrementAndGet();
+            chain.proceed(message.andMetaData(MetaData.with("key", "value")), resultHandler.andOnComplete(m -> completionCounter.incrementAndGet()));
+        });
+
+        testSubject.publish(GenericEventMessage.asEventMessage("testing"));
+        assertEquals(1, invocationCounter.get());
+        assertEquals(1, completionCounter.get());
+
+        assertEquals(1, testSubject.committedEvents.size());
+        assertEquals("value", testSubject.committedEvents.get(0).getMetaData().get("key"));
+    }
+
+    @Test
     void testConsumersRegisteredWithUnitOfWorkWhenFirstEventIsPublished() {
         EventMessage<?> event = newEvent();
         testSubject.publish(event);
@@ -73,6 +140,7 @@ class AbstractEventBusTest {
         assertEquals(Collections.singletonList(event), testSubject.committedEvents);
     }
 
+    @SuppressWarnings("unchecked")
     @Test
     void testNoMoreConsumersRegisteredWithUnitOfWorkWhenSecondEventIsPublished() {
         EventMessage<?> event = newEvent();

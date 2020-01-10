@@ -27,12 +27,9 @@ import io.axoniq.axonserver.grpc.command.CommandSubscription;
 import io.grpc.stub.StreamObserver;
 import io.netty.util.internal.OutOfDirectMemoryError;
 import org.axonframework.axonserver.connector.AxonServerConfiguration;
-import org.axonframework.axonserver.connector.TargetContextResolver;
-import org.axonframework.axonserver.connector.AxonServerConfiguration;
 import org.axonframework.axonserver.connector.AxonServerConnectionManager;
 import org.axonframework.axonserver.connector.DefaultHandlers;
 import org.axonframework.axonserver.connector.DefaultInstructionAckSource;
-import org.axonframework.axonserver.connector.DispatchInterceptors;
 import org.axonframework.axonserver.connector.ErrorCode;
 import org.axonframework.axonserver.connector.Handlers;
 import org.axonframework.axonserver.connector.InstructionAckSource;
@@ -53,8 +50,10 @@ import org.axonframework.common.AxonThreadFactory;
 import org.axonframework.common.Registration;
 import org.axonframework.messaging.Distributed;
 import org.axonframework.messaging.MessageDispatchInterceptor;
+import org.axonframework.messaging.MessageDispatchInterceptors;
 import org.axonframework.messaging.MessageHandler;
 import org.axonframework.messaging.MessageHandlerInterceptor;
+import org.axonframework.messaging.ResultHandler;
 import org.axonframework.serialization.Serializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -97,7 +96,7 @@ public class AxonServerCommandBus implements CommandBus, Distributed<CommandBus>
     private final CommandLoadFactorProvider loadFactorProvider;
 
     private final CommandProcessor commandProcessor;
-    private final DispatchInterceptors<CommandMessage<?>> dispatchInterceptors;
+    private final MessageDispatchInterceptors<CommandMessage<?>, CommandResultMessage<?>> dispatchInterceptors;
     private final TargetContextResolver<? super CommandMessage<?>> targetContextResolver;
     private final CommandCallback<Object, Object> defaultCommandCallback;
     private final Handlers<CommandProviderInbound.RequestCase, BiConsumer<CommandProviderInbound, StreamObserver<CommandProviderOutbound>>> commandHandlers = new DefaultHandlers<>();
@@ -218,7 +217,7 @@ public class AxonServerCommandBus implements CommandBus, Distributed<CommandBus>
                                                      so -> (StreamObserver<CommandProviderOutbound>) so.getRequestStream(),
                                                      new DefaultInstructionAckSource<>(ack -> CommandProviderOutbound.newBuilder().setAck(ack).build()));
 
-        dispatchInterceptors = new DispatchInterceptors<>();
+        dispatchInterceptors = new MessageDispatchInterceptors<>();
 
         this.axonServerConnectionManager.addReconnectListener(context, this::resubscribe);
         this.axonServerConnectionManager.addDisconnectListener(context, this::unsubscribe);
@@ -248,7 +247,7 @@ public class AxonServerCommandBus implements CommandBus, Distributed<CommandBus>
                                                      builder.requestStreamFactory,
                                                      builder.instructionAckSource);
 
-        dispatchInterceptors = new DispatchInterceptors<>();
+        dispatchInterceptors = new MessageDispatchInterceptors<>();
 
         this.axonServerConnectionManager.addReconnectListener(context, this::resubscribe);
         this.axonServerConnectionManager.addDisconnectListener(context, this::unsubscribe);
@@ -271,11 +270,15 @@ public class AxonServerCommandBus implements CommandBus, Distributed<CommandBus>
     public <C, R> void dispatch(CommandMessage<C> commandMessage,
                                 CommandCallback<? super C, ? super R> commandCallback) {
         logger.debug("Dispatch command [{}] with callback", commandMessage.getCommandName());
-        doDispatch(dispatchInterceptors.intercept(commandMessage), commandCallback);
+        CommandMessage<C> preProcessed = dispatchInterceptors.preProcess(commandMessage);
+        dispatchInterceptors.intercept(preProcessed,
+                                       new CallbackResultHandler<C, R>(commandCallback),
+                                       this::doDispatch
+        );
     }
 
     private <C, R> void doDispatch(CommandMessage<C> commandMessage,
-                                   CommandCallback<? super C, ? super R> commandCallback) {
+                                   ResultHandler<? super CommandMessage<C>, ? super CommandResultMessage<R>> resultHandler) {
         AtomicBoolean serverResponded = new AtomicBoolean(false);
         try {
             String context = targetContextResolver.resolveContext(commandMessage);
@@ -295,9 +298,9 @@ public class AxonServerCommandBus implements CommandBus, Distributed<CommandBus>
                                       try {
                                           CommandResultMessage<R> resultMessage =
                                                   serializer.deserialize(commandResponse);
-                                          commandCallback.onResult(commandMessage, resultMessage);
+                                          resultHandler.onResult(commandMessage, resultMessage);
                                       } catch (Exception ex) {
-                                          commandCallback.onResult(commandMessage, asCommandResultMessage(ex));
+                                          resultHandler.onError(commandMessage, ex);
                                           logger.info("Failed to deserialize payload [{}] - Cause: {}",
                                                       commandResponse.getPayload().getData(),
                                                       ex.getCause().getMessage());
@@ -307,22 +310,24 @@ public class AxonServerCommandBus implements CommandBus, Distributed<CommandBus>
                                   @Override
                                   public void onError(Throwable throwable) {
                                       serverResponded.set(true);
-                                      commandCallback.onResult(commandMessage, asCommandResultMessage(
-                                              ErrorCode.COMMAND_DISPATCH_ERROR.convert(
-                                                      configuration.getClientId(), throwable
-                                              )
-                                      ));
+                                      resultHandler.onError(commandMessage,
+                                                            ErrorCode.COMMAND_DISPATCH_ERROR.convert(
+                                                                    configuration.getClientId(), throwable
+                                                            )
+                                      );
                                   }
 
                                   @Override
                                   public void onCompleted() {
-                                      if (!serverResponded.get()) {
+                                      if (serverResponded.get()) {
+                                          resultHandler.onComplete(commandMessage);
+                                      } else {
                                           ErrorMessage errorMessage =
                                                   ErrorMessage.newBuilder()
-                                                              .setMessage("No result from command executor")
+                                                              .setMessage("No result from command handler")
                                                               .build();
-                                          commandCallback.onResult(commandMessage, asCommandResultMessage(
-                                                  ErrorCode.COMMAND_DISPATCH_ERROR.convert(errorMessage))
+                                          resultHandler.onError(commandMessage,
+                                                                ErrorCode.COMMAND_DISPATCH_ERROR.convert(errorMessage)
                                           );
                                       }
                                   }
@@ -330,9 +335,9 @@ public class AxonServerCommandBus implements CommandBus, Distributed<CommandBus>
                     );
         } catch (Exception e) {
             logger.debug("There was a problem dispatching command [{}].", commandMessage, e);
-            commandCallback.onResult(
+            resultHandler.onError(
                     commandMessage,
-                    asCommandResultMessage(ErrorCode.COMMAND_DISPATCH_ERROR.convert(configuration.getClientId(), e))
+                    ErrorCode.COMMAND_DISPATCH_ERROR.convert(configuration.getClientId(), e)
             );
         }
     }
@@ -607,6 +612,30 @@ public class AxonServerCommandBus implements CommandBus, Distributed<CommandBus>
             assertNonNull(localSegment, "The Local CommandBus is a hard requirement and should be provided");
             assertNonNull(serializer, "The Serializer is a hard requirement and should be provided");
             assertNonNull(routingStrategy, "The RoutingStrategy is a hard requirement and should be provided");
+        }
+    }
+
+    private static class CallbackResultHandler<C, R> implements ResultHandler<CommandMessage<C>, CommandResultMessage<R>> {
+
+        private final CommandCallback<? super C, ? super R> commandCallback;
+
+        public CallbackResultHandler(CommandCallback<? super C, ? super R> commandCallback) {
+            this.commandCallback = commandCallback;
+        }
+
+        @Override
+        public void onResult(CommandMessage<C> message, CommandResultMessage<R> result) {
+            commandCallback.onResult(message, asCommandResultMessage(result));
+        }
+
+        @Override
+        public void onComplete(CommandMessage<C> message) {
+            // ignore
+        }
+
+        @Override
+        public void onError(CommandMessage<C> message, Throwable error) {
+            commandCallback.onResult(message, asCommandResultMessage(error));
         }
     }
 

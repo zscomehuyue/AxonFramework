@@ -21,9 +21,20 @@ import com.lmax.disruptor.RingBuffer;
 import com.lmax.disruptor.WaitStrategy;
 import com.lmax.disruptor.dsl.Disruptor;
 import com.lmax.disruptor.dsl.ProducerType;
-import org.axonframework.commandhandling.*;
+import org.axonframework.commandhandling.CommandBus;
+import org.axonframework.commandhandling.CommandCallback;
+import org.axonframework.commandhandling.CommandMessage;
+import org.axonframework.commandhandling.CommandResultMessage;
+import org.axonframework.commandhandling.DuplicateCommandHandlerResolution;
+import org.axonframework.commandhandling.DuplicateCommandHandlerResolver;
+import org.axonframework.commandhandling.MonitorAwareCallback;
+import org.axonframework.commandhandling.NoHandlerForCommandException;
 import org.axonframework.commandhandling.callbacks.NoOpCallback;
-import org.axonframework.common.*;
+import org.axonframework.common.Assert;
+import org.axonframework.common.AxonConfigurationException;
+import org.axonframework.common.AxonThreadFactory;
+import org.axonframework.common.IdentifierFactory;
+import org.axonframework.common.Registration;
 import org.axonframework.common.caching.Cache;
 import org.axonframework.common.caching.NoCache;
 import org.axonframework.common.transaction.TransactionManager;
@@ -31,7 +42,14 @@ import org.axonframework.eventsourcing.AggregateFactory;
 import org.axonframework.eventsourcing.NoSnapshotTriggerDefinition;
 import org.axonframework.eventsourcing.SnapshotTriggerDefinition;
 import org.axonframework.eventsourcing.eventstore.EventStore;
-import org.axonframework.messaging.*;
+import org.axonframework.messaging.Message;
+import org.axonframework.messaging.MessageDispatchInterceptor;
+import org.axonframework.messaging.MessageDispatchInterceptors;
+import org.axonframework.messaging.MessageHandler;
+import org.axonframework.messaging.MessageHandlerInterceptor;
+import org.axonframework.messaging.ResultHandler;
+import org.axonframework.messaging.ResultHandlerAdapter;
+import org.axonframework.messaging.ScopeDescriptor;
 import org.axonframework.messaging.annotation.ClasspathHandlerDefinition;
 import org.axonframework.messaging.annotation.ClasspathParameterResolverFactory;
 import org.axonframework.messaging.annotation.HandlerDefinition;
@@ -39,7 +57,13 @@ import org.axonframework.messaging.annotation.ParameterResolverFactory;
 import org.axonframework.messaging.unitofwork.RollbackConfiguration;
 import org.axonframework.messaging.unitofwork.RollbackConfigurationType;
 import org.axonframework.messaging.unitofwork.UnitOfWork;
-import org.axonframework.modelling.command.*;
+import org.axonframework.modelling.command.Aggregate;
+import org.axonframework.modelling.command.AggregateNotFoundException;
+import org.axonframework.modelling.command.AggregateScopeDescriptor;
+import org.axonframework.modelling.command.AnnotationCommandTargetResolver;
+import org.axonframework.modelling.command.CommandTargetResolver;
+import org.axonframework.modelling.command.Repository;
+import org.axonframework.modelling.command.RepositoryProvider;
 import org.axonframework.monitoring.MessageMonitor;
 import org.axonframework.monitoring.NoOpMessageMonitor;
 import org.slf4j.Logger;
@@ -49,8 +73,15 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.*;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import static java.lang.String.format;
 import static org.axonframework.commandhandling.GenericCommandResultMessage.asCommandResultMessage;
@@ -120,7 +151,7 @@ public class DisruptorCommandBus implements CommandBus {
     private final ConcurrentMap<String, MessageHandler<? super CommandMessage<?>>> commandHandlers =
             new ConcurrentHashMap<>();
 
-    private final List<MessageDispatchInterceptor<? super CommandMessage<?>>> dispatchInterceptors;
+    private final MessageDispatchInterceptors<CommandMessage<?>, CommandResultMessage<?>> dispatchInterceptors = new MessageDispatchInterceptors<>();
     private final List<MessageHandlerInterceptor<? super CommandMessage<?>>> invokerInterceptors;
     private final List<MessageHandlerInterceptor<? super CommandMessage<?>>> publisherInterceptors;
     private final ExecutorService executorService;
@@ -189,7 +220,7 @@ public class DisruptorCommandBus implements CommandBus {
     protected DisruptorCommandBus(Builder builder) {
         builder.validate();
 
-        dispatchInterceptors = new CopyOnWriteArrayList<>(builder.dispatchInterceptors);
+        builder.dispatchInterceptors.forEach(dispatchInterceptors::registerDispatchInterceptor);
         invokerInterceptors = new CopyOnWriteArrayList<>(builder.invokerInterceptors);
         publisherInterceptors = new ArrayList<>(builder.publisherInterceptors);
 
@@ -251,19 +282,18 @@ public class DisruptorCommandBus implements CommandBus {
     @SuppressWarnings("unchecked")
     public <C, R> void dispatch(CommandMessage<C> command, CommandCallback<? super C, ? super R> callback) {
         Assert.state(started, () -> "CommandBus has been shut down. It is not accepting any Commands");
-        CommandMessage<? extends C> commandToDispatch = command;
-        for (MessageDispatchInterceptor<? super CommandMessage<?>> interceptor : dispatchInterceptors) {
-            commandToDispatch = (CommandMessage) interceptor.handle(commandToDispatch);
-        }
-        MessageMonitor.MonitorCallback monitorCallback = messageMonitor.onMessageIngested(commandToDispatch);
-
+        MessageMonitor.MonitorCallback monitorCallback = messageMonitor.onMessageIngested(command);
+        CommandMessage<C> commandToDispatch = dispatchInterceptors.preProcess(command);
         try {
-            doDispatch(commandToDispatch, new MonitorAwareCallback(callback, monitorCallback));
+            dispatchInterceptors.intercept(commandToDispatch,
+                                           new CallbackResultHandler<>(new MonitorAwareCallback<>(callback, monitorCallback)),
+                                           this::doDispatch);
         } catch (Exception e) {
             monitorCallback.reportFailure(e);
             callback.onResult(commandToDispatch, asCommandResultMessage(e));
         }
     }
+
 
     /**
      * Forces a dispatch of a command. This method should be used with caution. It allows commands to be retried during
@@ -271,10 +301,9 @@ public class DisruptorCommandBus implements CommandBus {
      *
      * @param command  The command to dispatch
      * @param callback The callback to notify when command handling is completed
-     * @param <R>      The expected return type of the command
      */
     @SuppressWarnings("Duplicates")
-    private <C, R> void doDispatch(CommandMessage<? extends C> command, CommandCallback<? super C, R> callback) {
+    private void doDispatch(CommandMessage<?> command, ResultHandler<CommandMessage<?>, CommandResultMessage<?>> callback) {
         Assert.state(!disruptorShutDown, () -> "Disruptor has been shut down. Cannot dispatch or re-dispatch commands");
         final MessageHandler<? super CommandMessage<?>> commandHandler = commandHandlers.get(command.getCommandName());
         if (commandHandler == null) {
@@ -303,8 +332,8 @@ public class DisruptorCommandBus implements CommandBus {
         try {
             CommandHandlingEntry event = ringBuffer.get(sequence);
             event.reset(command, commandHandler, invokerSegment, publisherSegment,
-                        new BlacklistDetectingCallback<C, R>(callback, disruptor.getRingBuffer(), this::doDispatch,
-                                                             rescheduleOnCorruptState),
+                        new BlacklistDetectingCallback(callback, disruptor.getRingBuffer(), this::doDispatch,
+                                                       rescheduleOnCorruptState),
                         invokerInterceptors,
                         publisherInterceptors);
         } finally {
@@ -535,8 +564,7 @@ public class DisruptorCommandBus implements CommandBus {
     @Override
     public Registration registerDispatchInterceptor(
             MessageDispatchInterceptor<? super CommandMessage<?>> dispatchInterceptor) {
-        dispatchInterceptors.add(dispatchInterceptor);
-        return () -> dispatchInterceptors.remove(dispatchInterceptor);
+        return dispatchInterceptors.registerDispatchInterceptor(dispatchInterceptor);
     }
 
     @Override
@@ -660,7 +688,7 @@ public class DisruptorCommandBus implements CommandBus {
          *                             dispatching a command
          * @return the current Builder instance, for fluent interfacing
          */
-        public Builder dispatchInterceptors(List<MessageDispatchInterceptor<CommandMessage<?>>> dispatchInterceptors) {
+        public Builder dispatchInterceptors(List<MessageDispatchInterceptor<? super CommandMessage<?>>> dispatchInterceptors) {
             this.dispatchInterceptors.clear();
             this.dispatchInterceptors.addAll(dispatchInterceptors);
             return this;
@@ -948,6 +976,50 @@ public class DisruptorCommandBus implements CommandBus {
         }
     }
 
+    private static class CallbackResultHandler<C, R> implements ResultHandler<CommandMessage<C>, CommandResultMessage<R>> {
+
+        private final CommandCallback<? super C, ? super R> commandCallback;
+
+        public CallbackResultHandler(CommandCallback<? super C, ? super R> commandCallback) {
+            this.commandCallback = commandCallback;
+        }
+
+        @Override
+        public void onResult(CommandMessage<C> message, CommandResultMessage<R> result) {
+            commandCallback.onResult(message, asCommandResultMessage(result));
+        }
+
+        @Override
+        public void onComplete(CommandMessage<C> message) {
+            // ignore
+        }
+
+        @Override
+        public void onError(CommandMessage<C> message, Throwable error) {
+            commandCallback.onResult(message, asCommandResultMessage(error));
+        }
+    }
+
+    private class ExceptionHandler implements com.lmax.disruptor.ExceptionHandler {
+
+        @Override
+        public void handleEventException(Throwable ex, long sequence, Object event) {
+            logger.error("Exception occurred while processing a {}.",
+                         ((CommandHandlingEntry) event).getMessage().getPayloadType().getSimpleName(), ex);
+        }
+
+        @Override
+        public void handleOnStartException(Throwable ex) {
+            logger.error("Failed to start the DisruptorCommandBus.", ex);
+            disruptor.shutdown();
+        }
+
+        @Override
+        public void handleOnShutdownException(Throwable ex) {
+            logger.error("Error while shutting down the DisruptorCommandBus", ex);
+        }
+    }
+
     private class DisruptorRepository<T> implements Repository<T> {
 
         private final Class<T> type;
@@ -1027,8 +1099,8 @@ public class DisruptorCommandBus implements CommandBus {
                         },
                         invokerSegment,
                         publisherSegment,
-                        new BlacklistDetectingCallback<>(
-                                new CommandCallback<Object, Object>() {
+                        new BlacklistDetectingCallback(
+                                new ResultHandlerAdapter<CommandMessage<?>, CommandResultMessage<?>>() {
                                     @Override
                                     public void onResult(CommandMessage<?> commandMessage,
                                                          CommandResultMessage<?> commandResultMessage) {
@@ -1039,6 +1111,11 @@ public class DisruptorCommandBus implements CommandBus {
                                         } else {
                                             future.complete(null);
                                         }
+                                    }
+
+                                    @Override
+                                    public void onError(CommandMessage<?> message, Throwable error) {
+                                        future.completeExceptionally(error);
                                     }
                                 },
                                 disruptor.getRingBuffer(),
@@ -1055,26 +1132,6 @@ public class DisruptorCommandBus implements CommandBus {
         public boolean canResolve(ScopeDescriptor scopeDescription) {
             return scopeDescription instanceof AggregateScopeDescriptor
                     && Objects.equals(type.getSimpleName(), ((AggregateScopeDescriptor) scopeDescription).getType());
-        }
-    }
-
-    private class ExceptionHandler implements com.lmax.disruptor.ExceptionHandler {
-
-        @Override
-        public void handleEventException(Throwable ex, long sequence, Object event) {
-            logger.error("Exception occurred while processing a {}.",
-                         ((CommandHandlingEntry) event).getMessage().getPayloadType().getSimpleName(), ex);
-        }
-
-        @Override
-        public void handleOnStartException(Throwable ex) {
-            logger.error("Failed to start the DisruptorCommandBus.", ex);
-            disruptor.shutdown();
-        }
-
-        @Override
-        public void handleOnShutdownException(Throwable ex) {
-            logger.error("Error while shutting down the DisruptorCommandBus", ex);
         }
     }
 }

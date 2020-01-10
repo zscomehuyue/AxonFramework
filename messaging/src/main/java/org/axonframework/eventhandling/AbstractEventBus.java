@@ -19,7 +19,13 @@ package org.axonframework.eventhandling;
 import org.axonframework.common.Assert;
 import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.Registration;
+import org.axonframework.messaging.EventPublicationFailedException;
+import org.axonframework.messaging.Message;
 import org.axonframework.messaging.MessageDispatchInterceptor;
+import org.axonframework.messaging.MessageDispatchInterceptorChain;
+import org.axonframework.messaging.MessageDispatchInterceptors;
+import org.axonframework.messaging.ResultAwareMessageDispatchInterceptor;
+import org.axonframework.messaging.ResultHandler;
 import org.axonframework.messaging.unitofwork.CurrentUnitOfWork;
 import org.axonframework.messaging.unitofwork.UnitOfWork;
 import org.axonframework.monitoring.MessageMonitor;
@@ -32,9 +38,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArraySet;
-import java.util.function.BiFunction;
 import java.util.function.Consumer;
-import java.util.stream.Collectors;
 
 import static org.axonframework.common.BuilderUtils.assertNonNull;
 import static org.axonframework.messaging.unitofwork.UnitOfWork.Phase.AFTER_COMMIT;
@@ -56,11 +60,9 @@ public abstract class AbstractEventBus implements EventBus {
 
     private static final Logger logger = LoggerFactory.getLogger(AbstractEventBus.class);
 
-    private final MessageMonitor<? super EventMessage<?>> messageMonitor;
-
     private final String eventsKey = this + "_EVENTS";
     private final Set<Consumer<List<? extends EventMessage<?>>>> eventProcessors = new CopyOnWriteArraySet<>();
-    private final Set<MessageDispatchInterceptor<? super EventMessage<?>>> dispatchInterceptors = new CopyOnWriteArraySet<>();
+    private final MessageDispatchInterceptors<EventMessage<?>, Message<?>> dispatchInterceptors = new MessageDispatchInterceptors<>();
 
     /**
      * Instantiate an {@link AbstractEventBus} based on the fields contained in the {@link Builder}.
@@ -69,7 +71,8 @@ public abstract class AbstractEventBus implements EventBus {
      */
     protected AbstractEventBus(Builder builder) {
         builder.validate();
-        this.messageMonitor = builder.messageMonitor;
+        MessageMonitor<? super EventMessage<?>> messageMonitor = builder.messageMonitor;
+        dispatchInterceptors.registerDispatchInterceptor(new MessageMonitorDispatchInterceptor<>(messageMonitor));
     }
 
     @Override
@@ -105,15 +108,19 @@ public abstract class AbstractEventBus implements EventBus {
     @Override
     public Registration registerDispatchInterceptor(
             MessageDispatchInterceptor<? super EventMessage<?>> dispatchInterceptor) {
-        dispatchInterceptors.add(dispatchInterceptor);
-        return () -> dispatchInterceptors.remove(dispatchInterceptor);
+        return dispatchInterceptors.registerDispatchInterceptor(dispatchInterceptor);
     }
 
     @Override
     public void publish(List<? extends EventMessage<?>> events) {
-        List<MessageMonitor.MonitorCallback> ingested = events.stream().map(messageMonitor::onMessageIngested)
-                                                              .collect(Collectors.toList());
-
+        List<EventMessage<?>> interceptedEvents = new ArrayList<>();
+        List<PublicationResult> results = new ArrayList<>();
+        events.forEach(m -> {
+            dispatchInterceptors.intercept(m, (im, r) -> {
+                interceptedEvents.add(im);
+                results.add(new PublicationResult(im, r));
+            });
+        });
         if (CurrentUnitOfWork.isStarted()) {
             UnitOfWork<?> unitOfWork = CurrentUnitOfWork.get();
             Assert.state(!unitOfWork.phase().isAfter(PREPARE_COMMIT),
@@ -123,20 +130,20 @@ public abstract class AbstractEventBus implements EventBus {
                          () -> "It is not allowed to publish events when the root Unit of Work has already been " +
                                  "committed.");
 
-            unitOfWork.afterCommit(u -> ingested.forEach(MessageMonitor.MonitorCallback::reportSuccess));
-            unitOfWork.onRollback(uow -> ingested.forEach(
-                    message -> message.reportFailure(uow.getExecutionResult().getExceptionResult())
-            ));
-
-            eventsQueue(unitOfWork).addAll(events);
+            unitOfWork.afterCommit(u -> results.forEach(PublicationResult::onComplete));
+            unitOfWork.onRollback(uow -> {
+                EventPublicationFailedException error = new EventPublicationFailedException("Event Publication was cancelled due to Unit of Work rollback", uow.getExecutionResult().getExceptionResult());
+                results.forEach(r -> r.onError(error));
+            });
+            eventsQueue(unitOfWork).addAll(interceptedEvents);
         } else {
             try {
-                prepareCommit(intercept(events));
-                commit(events);
-                afterCommit(events);
-                ingested.forEach(MessageMonitor.MonitorCallback::reportSuccess);
+                prepareCommit(intercept(interceptedEvents));
+                commit(interceptedEvents);
+                afterCommit(interceptedEvents);
+                results.forEach(PublicationResult::onComplete);
             } catch (Exception e) {
-                ingested.forEach(m -> m.reportFailure(e));
+                results.forEach(m -> m.onError(e));
                 throw e;
             }
         }
@@ -205,15 +212,7 @@ public abstract class AbstractEventBus implements EventBus {
      * @return The events to actually publish
      */
     protected List<? extends EventMessage<?>> intercept(List<? extends EventMessage<?>> events) {
-        List<EventMessage<?>> preprocessedEvents = new ArrayList<>(events);
-        for (MessageDispatchInterceptor<? super EventMessage<?>> preprocessor : dispatchInterceptors) {
-            BiFunction<Integer, ? super EventMessage<?>, ? super EventMessage<?>> function =
-                    preprocessor.handle(preprocessedEvents);
-            for (int i = 0; i < preprocessedEvents.size(); i++) {
-                preprocessedEvents.set(i, (EventMessage<?>) function.apply(i, preprocessedEvents.get(i)));
-            }
-        }
-        return preprocessedEvents;
+        return dispatchInterceptors.preProcess(events);
     }
 
     private void doWithEvents(Consumer<List<? extends EventMessage<?>>> eventsConsumer,
@@ -280,6 +279,42 @@ public abstract class AbstractEventBus implements EventBus {
          */
         protected void validate() throws AxonConfigurationException {
             // Kept to be overridden
+        }
+    }
+
+    private static class MessageMonitorDispatchInterceptor<M extends Message<?>> implements ResultAwareMessageDispatchInterceptor<M, Message<?>> {
+
+        private final MessageMonitor<? super M> messageMonitor;
+
+        public MessageMonitorDispatchInterceptor(MessageMonitor<? super M> messageMonitor) {
+            this.messageMonitor = messageMonitor;
+        }
+
+        @Override
+        public void dispatch(M message, ResultHandler<M, Message<?>> resultHandler, MessageDispatchInterceptorChain chain) {
+            MessageMonitor.MonitorCallback callback = messageMonitor.onMessageIngested(message);
+            chain.proceed(message, resultHandler.andOnError((m, e) -> callback.reportFailure(e))
+                                                .andOnComplete(m -> callback.reportSuccess())
+            );
+        }
+    }
+
+    private static class PublicationResult {
+        private final EventMessage<?> publishedMessage;
+        private final ResultHandler<EventMessage<?>, Message<?>> resultHandler;
+
+        public PublicationResult(EventMessage<?> publishedMessage, ResultHandler<EventMessage<?>, Message<?>> resultHandler) {
+
+            this.publishedMessage = publishedMessage;
+            this.resultHandler = resultHandler;
+        }
+
+        public void onComplete() {
+            resultHandler.onComplete(publishedMessage);
+        }
+
+        public void onError(Throwable error) {
+            resultHandler.onError(publishedMessage, error);
         }
     }
 }

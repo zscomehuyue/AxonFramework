@@ -188,15 +188,15 @@ public class EventPublisher implements EventHandler<CommandHandlingEntry> {
         return exceptionResult;
     }
 
-    private static class ReportResultTask<C, R> implements Runnable {
+    private static class ReportResultTask implements Runnable {
 
-        private final CommandMessage<C> commandMessage;
-        private final CommandCallback<C, R> callback;
-        private final CommandResultMessage<R> result;
+        private final CommandMessage<?> commandMessage;
+        private final BlacklistDetectingCallback callback;
+        private final CommandResultMessage<?> result;
 
-        private ReportResultTask(CommandMessage<C> commandMessage,
-                                 CommandCallback<C, R> callback,
-                                 CommandResultMessage<R> result) {
+        private ReportResultTask(CommandMessage<?> commandMessage,
+                                 BlacklistDetectingCallback callback,
+                                 CommandResultMessage<?> result) {
             this.commandMessage = commandMessage;
             this.callback = callback;
             this.result = result;

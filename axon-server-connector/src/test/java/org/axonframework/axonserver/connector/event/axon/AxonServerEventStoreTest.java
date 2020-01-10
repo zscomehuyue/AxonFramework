@@ -20,12 +20,17 @@ import org.axonframework.axonserver.connector.AxonServerConfiguration;
 import org.axonframework.axonserver.connector.AxonServerConnectionManager;
 import org.axonframework.axonserver.connector.event.StubServer;
 import org.axonframework.axonserver.connector.util.TcpUtil;
+import org.axonframework.eventhandling.EventMessage;
 import org.axonframework.eventhandling.GenericDomainEventMessage;
 import org.axonframework.eventhandling.GenericEventMessage;
 import org.axonframework.eventhandling.TrackingEventStream;
 import org.axonframework.eventsourcing.eventstore.DomainEventStream;
 import org.axonframework.eventsourcing.eventstore.EventStoreException;
 import org.axonframework.messaging.Message;
+import org.axonframework.messaging.MessageDispatchInterceptorChain;
+import org.axonframework.messaging.MetaData;
+import org.axonframework.messaging.ResultAwareMessageDispatchInterceptor;
+import org.axonframework.messaging.ResultHandler;
 import org.axonframework.messaging.unitofwork.DefaultUnitOfWork;
 import org.axonframework.messaging.unitofwork.UnitOfWork;
 import org.axonframework.serialization.json.JacksonSerializer;
@@ -40,6 +45,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -90,6 +97,15 @@ class AxonServerEventStoreTest {
 
     @Test
     void testPublishAndConsumeEvents() throws Exception {
+        testSubject.registerDispatchInterceptor(new ResultAwareMessageDispatchInterceptor<EventMessage<?>, Message<?>>() {
+
+            private AtomicInteger counter = new AtomicInteger();
+            @Override
+            public void dispatch(EventMessage<?> message, ResultHandler<EventMessage<?>, Message<?>> resultHandler, MessageDispatchInterceptorChain chain) throws Exception {
+                chain.proceed(message.andMetaData(MetaData.with("key", counter.incrementAndGet())), resultHandler);
+            }
+        });
+
         UnitOfWork<Message<?>> uow = DefaultUnitOfWork.startAndGet(null);
         testSubject.publish(GenericEventMessage.asEventMessage("Test1"),
                             GenericEventMessage.asEventMessage("Test2"),
@@ -98,13 +114,14 @@ class AxonServerEventStoreTest {
 
         TrackingEventStream stream = testSubject.openStream(null);
 
-        List<String> received = new ArrayList<>();
+        List<EventMessage<?>> received = new ArrayList<>();
         while (stream.hasNextAvailable(100, TimeUnit.MILLISECONDS)) {
-            received.add(stream.nextAvailable().getPayload().toString());
+            received.add(stream.nextAvailable());
         }
         stream.close();
 
-        assertEquals(Arrays.asList("Test1", "Test2", "Test3"), received);
+        assertEquals(Arrays.asList("Test1", "Test2", "Test3"), received.stream().map(Message::getPayload).collect(Collectors.toList()));
+        assertEquals(Arrays.asList(1, 2, 3), received.stream().map(Message::getMetaData).map(m -> m.get("key")).collect(Collectors.toList()));
     }
 
     @Test

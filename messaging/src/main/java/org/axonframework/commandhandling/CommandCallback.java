@@ -16,6 +16,8 @@
 
 package org.axonframework.commandhandling;
 
+import org.axonframework.messaging.Message;
+
 /**
  * Interface describing a callback that is invoked when command handler execution has finished.
  *
@@ -34,4 +36,5 @@ public interface CommandCallback<C, R> {
      * @param commandResultMessage the {@link CommandResultMessage} of the command handling execution
      */
     void onResult(CommandMessage<? extends C> commandMessage, CommandResultMessage<? extends R> commandResultMessage);
+
 }

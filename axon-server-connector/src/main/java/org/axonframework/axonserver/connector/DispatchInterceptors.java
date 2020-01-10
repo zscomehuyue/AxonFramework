@@ -28,6 +28,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * @author Sara Pellegrini
  * @since 4.0
  */
+@Deprecated
 public class DispatchInterceptors<M extends Message<?>> {
 
     private final List<MessageDispatchInterceptor<? super M>> dispatchInterceptors = new CopyOnWriteArrayList<>();

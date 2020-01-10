@@ -18,6 +18,7 @@ package org.axonframework.commandhandling;
 
 import org.axonframework.commandhandling.callbacks.LoggingCallback;
 import org.axonframework.commandhandling.callbacks.NoOpCallback;
+import org.axonframework.commandhandling.distributed.CommandDispatchException;
 import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.Registration;
 import org.axonframework.common.transaction.NoTransactionManager;
@@ -63,8 +64,7 @@ public class SimpleCommandBus implements CommandBus {
             new ConcurrentHashMap<>();
     private final List<MessageHandlerInterceptor<? super CommandMessage<?>>> handlerInterceptors =
             new CopyOnWriteArrayList<>();
-    private final List<MessageDispatchInterceptor<? super CommandMessage<?>>> dispatchInterceptors =
-            new CopyOnWriteArrayList<>();
+    private MessageDispatchInterceptors<CommandMessage<?>, CommandResultMessage<?>> dispatchInterceptors = new MessageDispatchInterceptors<>();
     private final CommandCallback<Object, Object> defaultCommandCallback;
     private RollbackConfiguration rollbackConfiguration;
 
@@ -120,11 +120,7 @@ public class SimpleCommandBus implements CommandBus {
      */
     @SuppressWarnings("unchecked")
     protected <C> CommandMessage<C> intercept(CommandMessage<C> command) {
-        CommandMessage<C> commandToDispatch = command;
-        for (MessageDispatchInterceptor<? super CommandMessage<?>> interceptor : dispatchInterceptors) {
-            commandToDispatch = (CommandMessage<C>) interceptor.handle(commandToDispatch);
-        }
-        return commandToDispatch;
+        return dispatchInterceptors.preProcess(command);
     }
 
     /**
@@ -138,14 +134,30 @@ public class SimpleCommandBus implements CommandBus {
     protected <C, R> void doDispatch(CommandMessage<C> command, CommandCallback<? super C, ? super R> callback) {
         MessageMonitor.MonitorCallback monitorCallback = messageMonitor.onMessageIngested(command);
 
-        Optional<MessageHandler<? super CommandMessage<?>>> optionalHandler = findCommandHandlerFor(command);
-        if (optionalHandler.isPresent()) {
-            handle(command, optionalHandler.get(), new MonitorAwareCallback<>(callback, monitorCallback));
-        } else {
-            NoHandlerForCommandException exception = new NoHandlerForCommandException(
-                    format("No handler was subscribed to command [%s]", command.getCommandName()));
-            monitorCallback.reportFailure(exception);
-            callback.onResult(command, asCommandResultMessage(exception));
+        try {
+            dispatchInterceptors.intercept(command, new ResultHandlerAdapter<CommandMessage<C>, CommandResultMessage<R>>() {
+                @Override
+                public void onResult(CommandMessage<C> message, CommandResultMessage<R> result) {
+                    callback.onResult(message, result);
+                }
+
+                @Override
+                public void onError(CommandMessage<C> message, Throwable error) {
+                    callback.onResult(message, asCommandResultMessage(error));
+                }
+            }, (messageForDispatch, resultCallback) -> {
+                Optional<MessageHandler<? super CommandMessage<?>>> optionalHandler = findCommandHandlerFor(messageForDispatch);
+                if (optionalHandler.isPresent()) {
+                    handle(messageForDispatch, optionalHandler.get(), new MonitorAwareCallback<>(new ResultHandlerCallback<>(resultCallback), monitorCallback));
+                } else {
+                    NoHandlerForCommandException exception = new NoHandlerForCommandException(
+                            format("No handler was subscribed to command [%s]", messageForDispatch.getCommandName()));
+                    resultCallback.onResult(messageForDispatch, asCommandResultMessage(exception));
+                    resultCallback.onComplete(messageForDispatch);
+                }
+            });
+        } catch (Exception e) {
+            throw new CommandDispatchException("An error occurred while dispatching a command", e);
         }
     }
 
@@ -220,8 +232,7 @@ public class SimpleCommandBus implements CommandBus {
     @Override
     public Registration registerDispatchInterceptor(
             MessageDispatchInterceptor<? super CommandMessage<?>> dispatchInterceptor) {
-        dispatchInterceptors.add(dispatchInterceptor);
-        return () -> dispatchInterceptors.remove(dispatchInterceptor);
+        return dispatchInterceptors.registerDispatchInterceptor(dispatchInterceptor);
     }
 
     /**
@@ -340,6 +351,20 @@ public class SimpleCommandBus implements CommandBus {
          */
         protected void validate() {
             // No assertions required, kept for overriding
+        }
+    }
+
+    private static class ResultHandlerCallback<C> implements CommandCallback<C, Object> {
+        private final ResultHandler<CommandMessage<?>, CommandResultMessage<?>> r;
+
+        public ResultHandlerCallback(ResultHandler<CommandMessage<?>, CommandResultMessage<?>> r) {
+            this.r = r;
+        }
+
+        @Override
+        public void onResult(CommandMessage<? extends C> commandMessage, CommandResultMessage<?> commandResultMessage) {
+            r.onResult(commandMessage, commandResultMessage);
+            r.onComplete(commandMessage);
         }
     }
 }

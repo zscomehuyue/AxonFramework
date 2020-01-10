@@ -203,7 +203,7 @@ public class CommandHandlingEntry extends DisruptorUnitOfWork<CommandMessage<?>>
     public void resetAsCallable(Callable<Object> callable,
                                 int newInvokerSegmentId,
                                 int newPublisherSegmentId,
-                                BlacklistDetectingCallback<Object, Object> newCallback) {
+                                BlacklistDetectingCallback newCallback) {
         this.isRecoverEntry = false;
         this.invokerSegmentId = newInvokerSegmentId;
         this.publisherSegmentId = newPublisherSegmentId;
