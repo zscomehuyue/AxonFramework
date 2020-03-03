@@ -63,6 +63,7 @@ public class DefaultUnitOfWork<T extends Message<?>> extends AbstractUnitOfWork<
     }
 
     @Override
+    @SuppressWarnings("Duplicates")
     public <R> ResultMessage<R> executeWithResult(Callable<R> task, RollbackConfiguration rollbackConfiguration) {
         if (phase() == Phase.NOT_STARTED) {
             start();
