@@ -76,13 +76,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.lang.invoke.MethodHandles;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Map;
-import java.util.ServiceLoader;
-import java.util.TreeMap;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
@@ -170,7 +164,7 @@ public class DefaultConfigurer implements Configurer {
     /**
      * Returns a Configurer instance with default components configured, such as a {@link SimpleCommandBus} and
      * {@link SimpleEventBus}, indicating whether to {@code autoLocateConfigurerModules}.
-     *
+     * <p>
      * When {@code autoLocateConfigurerModules} is {@code true}, a ServiceLoader will be used to locate all declared
      * instances of type {@link ConfigurerModule}. Each of the discovered instances will be invoked, allowing it to
      * set default values for the configuration.
@@ -182,7 +176,7 @@ public class DefaultConfigurer implements Configurer {
      */
     public static Configurer defaultConfiguration(boolean autoLocateConfigurerModules) {
         DefaultConfigurer configurer = new DefaultConfigurer();
-        if(autoLocateConfigurerModules) {
+        if (autoLocateConfigurerModules) {
             ServiceLoader<ConfigurerModule> configurerModuleLoader = ServiceLoader.load(ConfigurerModule.class, configurer.getClass().getClassLoader());
             List<ConfigurerModule> configurerModules = new ArrayList<>();
             configurerModuleLoader.forEach(configurerModules::add);
@@ -209,26 +203,26 @@ public class DefaultConfigurer implements Configurer {
                 .registerComponent(TransactionManager.class, c -> transactionManager)
                 .configureEmbeddedEventStore(
                         c -> JpaEventStorageEngine.builder()
-                                                  .snapshotSerializer(c.serializer())
-                                                  .upcasterChain(c.upcasterChain())
-                                                  .persistenceExceptionResolver(
-                                                          c.getComponent(PersistenceExceptionResolver.class)
-                                                  )
-                                                  .eventSerializer(c.eventSerializer())
-                                                  .entityManagerProvider(c.getComponent(EntityManagerProvider.class))
-                                                  .transactionManager(c.getComponent(TransactionManager.class))
-                                                  .build()
+                                .snapshotSerializer(c.serializer())
+                                .upcasterChain(c.upcasterChain())
+                                .persistenceExceptionResolver(
+                                        c.getComponent(PersistenceExceptionResolver.class)
+                                )
+                                .eventSerializer(c.eventSerializer())
+                                .entityManagerProvider(c.getComponent(EntityManagerProvider.class))
+                                .transactionManager(c.getComponent(TransactionManager.class))
+                                .build()
                 )
                 .registerComponent(TokenStore.class,
-                                   c -> JpaTokenStore.builder()
-                                                     .entityManagerProvider(c.getComponent(EntityManagerProvider.class))
-                                                     .serializer(c.serializer())
-                                                     .build())
+                        c -> JpaTokenStore.builder()
+                                .entityManagerProvider(c.getComponent(EntityManagerProvider.class))
+                                .serializer(c.serializer())
+                                .build())
                 .registerComponent(SagaStore.class,
-                                   c -> JpaSagaStore.builder()
-                                                    .entityManagerProvider(c.getComponent(EntityManagerProvider.class))
-                                                    .serializer(c.serializer())
-                                                    .build());
+                        c -> JpaSagaStore.builder()
+                                .entityManagerProvider(c.getComponent(EntityManagerProvider.class))
+                                .serializer(c.serializer())
+                                .build());
     }
 
     /**
@@ -251,7 +245,7 @@ public class DefaultConfigurer implements Configurer {
      */
     protected DefaultConfigurer() {
         components.put(ParameterResolverFactory.class,
-                       new Component<>(config, "parameterResolverFactory", this::defaultParameterResolverFactory));
+                new Component<>(config, "parameterResolverFactory", this::defaultParameterResolverFactory));
         components.put(Serializer.class, new Component<>(config, "serializer", this::defaultSerializer));
         components.put(CommandBus.class, new Component<>(config, "commandBus", this::defaultCommandBus));
         components.put(EventBus.class, new Component<>(config, "eventBus", this::defaultEventBus));
@@ -263,7 +257,7 @@ public class DefaultConfigurer implements Configurer {
         );
         components.put(QueryGateway.class, new Component<>(config, "queryGateway", this::defaultQueryGateway));
         components.put(ResourceInjector.class,
-                       new Component<>(config, "resourceInjector", this::defaultResourceInjector));
+                new Component<>(config, "resourceInjector", this::defaultResourceInjector));
         components.put(DeadlineManager.class, new Component<>(config, "deadlineManager", this::defaultDeadlineManager));
         components.put(EventUpcaster.class, upcasterChain);
         components.put(EventGateway.class, new Component<>(config, "eventGateway", this::defaultEventGateway));
@@ -299,15 +293,15 @@ public class DefaultConfigurer implements Configurer {
      */
     protected QueryBus defaultQueryBus(Configuration config) {
         return SimpleQueryBus.builder()
-                             .messageMonitor(config.messageMonitor(SimpleQueryBus.class, "queryBus"))
-                             .transactionManager(config.getComponent(TransactionManager.class,
-                                                                     NoTransactionManager::instance))
-                             .errorHandler(config.getComponent(
-                                     QueryInvocationErrorHandler.class,
-                                     () -> LoggingQueryInvocationErrorHandler.builder().build()
-                             ))
-                             .queryUpdateEmitter(config.getComponent(QueryUpdateEmitter.class))
-                             .build();
+                .messageMonitor(config.messageMonitor(SimpleQueryBus.class, "queryBus"))
+                .transactionManager(config.getComponent(TransactionManager.class,
+                        NoTransactionManager::instance))
+                .errorHandler(config.getComponent(
+                        QueryInvocationErrorHandler.class,
+                        () -> LoggingQueryInvocationErrorHandler.builder().build()
+                ))
+                .queryUpdateEmitter(config.getComponent(QueryUpdateEmitter.class))
+                .build();
     }
 
     /**
@@ -321,8 +315,8 @@ public class DefaultConfigurer implements Configurer {
         MessageMonitor<? super SubscriptionQueryUpdateMessage<?>> updateMessageMonitor =
                 config.messageMonitor(QueryUpdateEmitter.class, "queryUpdateEmitter");
         return SimpleQueryUpdateEmitter.builder()
-                                       .updateMessageMonitor(updateMessageMonitor)
-                                       .build();
+                .updateMessageMonitor(updateMessageMonitor)
+                .build();
     }
 
     /**
@@ -333,7 +327,7 @@ public class DefaultConfigurer implements Configurer {
      */
     protected ParameterResolverFactory defaultParameterResolverFactory(Configuration config) {
         return MultiParameterResolverFactory.ordered(ClasspathParameterResolverFactory.forClass(getClass()),
-                                                     new ConfigurationParameterResolverFactory(config));
+                new ConfigurationParameterResolverFactory(config));
     }
 
     /**
@@ -355,12 +349,12 @@ public class DefaultConfigurer implements Configurer {
     protected CommandBus defaultCommandBus(Configuration config) {
         SimpleCommandBus commandBus =
                 SimpleCommandBus.builder()
-                                .transactionManager(config.getComponent(TransactionManager.class,
-                                                                        () -> NoTransactionManager.INSTANCE))
-                                .duplicateCommandHandlerResolver(config.getComponent(DuplicateCommandHandlerResolver.class,
-                                                                                     LoggingDuplicateCommandHandlerResolver::instance))
-                                .messageMonitor(config.messageMonitor(SimpleCommandBus.class, "commandBus"))
-                                .build();
+                        .transactionManager(config.getComponent(TransactionManager.class,
+                                () -> NoTransactionManager.INSTANCE))
+                        .duplicateCommandHandlerResolver(config.getComponent(DuplicateCommandHandlerResolver.class,
+                                LoggingDuplicateCommandHandlerResolver::instance))
+                        .messageMonitor(config.messageMonitor(SimpleCommandBus.class, "commandBus"))
+                        .build();
         commandBus.registerHandlerInterceptor(new CorrelationDataInterceptor<>(config.correlationDataProviders()));
         return commandBus;
     }
@@ -395,8 +389,8 @@ public class DefaultConfigurer implements Configurer {
      */
     protected EventBus defaultEventBus(Configuration config) {
         return SimpleEventBus.builder()
-                             .messageMonitor(config.messageMonitor(EventBus.class, "eventBus"))
-                             .build();
+                .messageMonitor(config.messageMonitor(EventBus.class, "eventBus"))
+                .build();
     }
 
     /**
@@ -418,18 +412,18 @@ public class DefaultConfigurer implements Configurer {
      */
     protected Serializer defaultSerializer(Configuration config) {
         return XStreamSerializer.builder()
-                                .revisionResolver(config.getComponent(RevisionResolver.class,
-                                                                      AnnotationRevisionResolver::new))
-                                .build();
+                .revisionResolver(config.getComponent(RevisionResolver.class,
+                        AnnotationRevisionResolver::new))
+                .build();
     }
 
     @Override
     public EventProcessingConfigurer eventProcessing() {
         List<EventProcessingConfigurer> eventProcessingConfigurers =
                 modules.stream()
-                       .filter(module -> module.isType(EventProcessingConfigurer.class))
-                       .map(module -> (EventProcessingConfigurer) module.unwrap()) // It's safe to unwrap it since it isn't dependent on anything else.
-                       .collect(toList());
+                        .filter(module -> module.isType(EventProcessingConfigurer.class))
+                        .map(module -> (EventProcessingConfigurer) module.unwrap()) // It's safe to unwrap it since it isn't dependent on anything else.
+                        .collect(toList());
         switch (eventProcessingConfigurers.size()) {
             case 0:
                 EventProcessingModule eventProcessingModule = new EventProcessingModule();
@@ -539,9 +533,9 @@ public class DefaultConfigurer implements Configurer {
             MessageMonitor<Message<?>> monitor =
                     messageMonitorFactoryComponent.get().apply(EmbeddedEventStore.class, "eventStore");
             EmbeddedEventStore eventStore = EmbeddedEventStore.builder()
-                                                              .storageEngine(storageEngineBuilder.apply(c))
-                                                              .messageMonitor(monitor)
-                                                              .build();
+                    .storageEngine(storageEngineBuilder.apply(c))
+                    .messageMonitor(monitor)
+                    .build();
             c.onShutdown(eventStore::shutDown);
             return eventStore;
         });
@@ -677,13 +671,17 @@ public class DefaultConfigurer implements Configurer {
 
             List<LifecycleHandler> handlers = phasedHandlers.getValue();
             try {
-                handlers.stream()
+//                handlers.stream()
+//                        .map(LifecycleHandler::run)
+//                        .reduce((cf1, cf2) ->CompletableFuture.allOf(cf1,cf2))
+//                        .orElse(CompletableFuture.completedFuture(null))
+//                        .get(LIFECYCLE_PHASE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+                //FIXME 不使用reduce的实现方式；
+                CompletableFuture.allOf(handlers.stream()
                         .map(LifecycleHandler::run)
-                        .reduce((cf1, cf2) -> {
-                            CompletableFuture<Void> future = CompletableFuture.allOf(cf1, cf2);
-                            return future;
-                        })
-                        .orElse(CompletableFuture.completedFuture(null))
+                        .collect(toList())
+                        .toArray(new CompletableFuture[0]))
                         .get(LIFECYCLE_PHASE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
             } catch (CompletionException | ExecutionException e) {
                 exceptionHandler.accept(e);
