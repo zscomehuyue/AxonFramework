@@ -94,6 +94,7 @@ import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import java.util.stream.Stream;
 
 import static java.util.stream.Collectors.toList;
 
@@ -115,6 +116,7 @@ import static java.util.stream.Collectors.toList;
  * @author Allard Buijze
  * @since 3.0
  */
+@SuppressWarnings("unchecked")
 public class DefaultConfigurer implements Configurer {
 
     private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
@@ -563,8 +565,8 @@ public class DefaultConfigurer implements Configurer {
     }
 
     @Override
-    public Configurer registerHandlerDefinition(
-            BiFunction<Configuration, Class, HandlerDefinition> handlerDefinitionClass) {
+    @SuppressWarnings("unchecked")
+    public Configurer registerHandlerDefinition(BiFunction<Configuration, Class, HandlerDefinition> handlerDefinitionClass) {
         this.handlerDefinition.update(c -> clazz -> handlerDefinitionClass.apply(c, clazz));
         return this;
     }
@@ -677,7 +679,10 @@ public class DefaultConfigurer implements Configurer {
             try {
                 handlers.stream()
                         .map(LifecycleHandler::run)
-                        .reduce((cf1, cf2) -> CompletableFuture.allOf(cf1, cf2))
+                        .reduce((cf1, cf2) -> {
+                            CompletableFuture<Void> future = CompletableFuture.allOf(cf1, cf2);
+                            return future;
+                        })
                         .orElse(CompletableFuture.completedFuture(null))
                         .get(LIFECYCLE_PHASE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
             } catch (CompletionException | ExecutionException e) {

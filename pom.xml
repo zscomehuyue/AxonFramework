@@ -516,9 +516,10 @@
                     <source>1.8</source>
                     <target>1.8</target>
                     <encoding>UTF-8</encoding>
-                    <showWarnings>true</showWarnings>
-                    <showDeprecation>true</showDeprecation>
+                    <showWarnings>false</showWarnings>
+                    <showDeprecation>false</showDeprecation>
                     <compilerId>eclipse</compilerId>
+                    <compilerArgument>-Xlint:unchecked</compilerArgument>
                 </configuration>
                 <dependencies>
                     <dependency>

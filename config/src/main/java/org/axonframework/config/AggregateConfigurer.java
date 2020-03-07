@@ -228,6 +228,7 @@ public class AggregateConfigurer<A> implements AggregateConfiguration<A> {
                                                  .build());
     }
 
+    @SuppressWarnings("unchecked")
     private boolean commandBusHasDisruptorLocalSegment(CommandBus commandBus) {
         //noinspection unchecked
         return commandBus instanceof Distributed

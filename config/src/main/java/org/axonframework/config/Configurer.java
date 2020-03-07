@@ -50,6 +50,7 @@ import java.util.function.Function;
  * @see DefaultConfigurer
  * @since 3.0
  */
+@SuppressWarnings("unchecked")
 public interface Configurer {
 
     /**
@@ -444,6 +445,7 @@ public interface Configurer {
      *                               as the class being inspected.
      * @return the current instance of the Configurer, for chaining purposes
      */
+    @SuppressWarnings("unchecked")
     Configurer registerHandlerDefinition(BiFunction<Configuration, Class, HandlerDefinition> handlerDefinitionClass);
 
     /**
