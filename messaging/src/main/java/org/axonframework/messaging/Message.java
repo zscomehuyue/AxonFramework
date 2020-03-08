@@ -36,7 +36,7 @@ import java.util.Map;
  * @see org.axonframework.commandhandling.CommandMessage {@code CommandMessage}
  * @see EventMessage
  * @since 2.0
- * FIXME 通用消息接口封装；
+ * FIXME 通用消息接口封装；该方法、命名都很值得参考；
  */
 public interface Message<T> extends Serializable {
 
