@@ -36,6 +36,7 @@ import java.util.Map;
  * @see org.axonframework.commandhandling.CommandMessage {@code CommandMessage}
  * @see EventMessage
  * @since 2.0
+ * FIXME 通用消息接口封装；
  */
 public interface Message<T> extends Serializable {
 
@@ -53,6 +54,7 @@ public interface Message<T> extends Serializable {
      * String, and the value is a serializable object.
      *
      * @return the meta data for this event
+     * FIXME 元数据类似于header ，key-value；
      */
     MetaData getMetaData();
 

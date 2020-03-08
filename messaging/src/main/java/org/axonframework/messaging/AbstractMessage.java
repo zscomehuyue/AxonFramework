@@ -20,7 +20,7 @@ import java.util.Map;
 
 /**
  * Abstract base class for Messages.
- *
+ * FIXME 通用消息接口封装；
  * @author Rene de Waele
  */
 public abstract class AbstractMessage<T> implements Message<T> {
