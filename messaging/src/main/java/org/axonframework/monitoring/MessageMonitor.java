@@ -37,6 +37,7 @@ import java.util.stream.Collectors;
 public interface MessageMonitor<T extends Message<?>> {
 
     /**
+     * FIXME 当消息接收，传送一个回调，用来处理，消息执行的结果；接口调用的回调如何实现，rcp的回调；
      * Takes a message and returns a callback that should be used
      * to inform the message monitor about the result of processing the message
      * @param message the message to monitor

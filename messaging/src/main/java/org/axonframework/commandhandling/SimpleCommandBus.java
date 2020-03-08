@@ -63,6 +63,8 @@ public class SimpleCommandBus implements CommandBus {
             new ConcurrentHashMap<>();
     private final List<MessageHandlerInterceptor<? super CommandMessage<?>>> handlerInterceptors =
             new CopyOnWriteArrayList<>();
+
+    //FIXME CopyOnWriteArrayList 避免锁的问题，一但创建，就无需copy；
     private final List<MessageDispatchInterceptor<? super CommandMessage<?>>> dispatchInterceptors =
             new CopyOnWriteArrayList<>();
     private final CommandCallback<Object, Object> defaultCommandCallback;
@@ -129,6 +131,7 @@ public class SimpleCommandBus implements CommandBus {
 
     /**
      * Performs the actual dispatching logic. The dispatch interceptors must have been invoked at this point.
+     *  FIXME 找到命令处理器，然后执行命令处理器；
      *
      * @param command  The actual command to dispatch to the handler
      * @param callback The callback to notify of the result
@@ -155,7 +158,7 @@ public class SimpleCommandBus implements CommandBus {
 
     /**
      * Performs the actual handling logic.
-     *
+     * FIXME 命令的执行，关注命令入参、结果、拦截器、命令执行上下文、事务、分布式、异常处理、中间结果、监控回调、资源等；
      * @param command  The actual command to handle
      * @param handler  The handler that must be invoked for this command
      * @param callback The callback to notify of the result
@@ -173,9 +176,9 @@ public class SimpleCommandBus implements CommandBus {
         unitOfWork.attachTransaction(transactionManager);
         InterceptorChain chain = new DefaultInterceptorChain<>(unitOfWork, handlerInterceptors, handler);
 
-        CommandResultMessage<R> resultMessage =
-                asCommandResultMessage(unitOfWork.executeWithResult(chain::proceed, rollbackConfiguration));
-        callback.onResult(command, resultMessage);
+        ResultMessage<Object> commandResult = unitOfWork.executeWithResult(chain::proceed, rollbackConfiguration);
+
+        callback.onResult(command, GenericCommandResultMessage.<R>asCommandResultMessage(commandResult));
     }
 
     /**
