@@ -29,6 +29,7 @@ import java.util.concurrent.Callable;
 public abstract class AggregateLifecycle extends Scope {
 
     /**
+     * FIXME 发布命令
      * Apply a {@link org.axonframework.eventhandling.DomainEventMessage} with given payload and metadata (metadata
      * from interceptors will be combined with the provided metadata). Applying events means they are immediately
      * applied (FIXME published) to the aggregate and scheduled for publication to other event handlers.
@@ -47,6 +48,7 @@ public abstract class AggregateLifecycle extends Scope {
     }
 
     /**
+     * FIXME 发布命令
      * Apply a {@link org.axonframework.eventhandling.DomainEventMessage} with given payload without metadata (though
      * interceptors can also be used to provide metadata). Applying events means they are immediately applied
      * (published) to the aggregate and scheduled for publication to other event handlers.
