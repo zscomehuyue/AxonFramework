@@ -33,7 +33,7 @@ import java.util.function.Supplier;
 /**
  * Implementation of an {@link Aggregate} that is sourced from events that have
  * been published by the aggregate.
- *
+ * FIXME EVENT存储事件，是在聚合对象里，发送消息后直接异步保存事件；
  * @param <T> The type of the aggregate root object
  */
 public class EventSourcedAggregate<T> extends AnnotatedAggregate<T> {
