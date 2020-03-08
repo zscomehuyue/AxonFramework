@@ -30,6 +30,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 
 /**
+ * FIXME 该类代表工作单元：来监控消息执行结果；
  * This class represents a Unit of Work that monitors the processing of a {@link Message}.
  * <p/>
  * Before processing begins a Unit of Work is bound to the active thread by registering it with the {@link
@@ -97,7 +98,7 @@ public interface UnitOfWork<T extends Message<?>> {
 
     /**
      * Returns the current phase of the Unit of Work.
-     *
+     * 阶段
      * @return the Unit of Work phase
      */
     Phase phase();
@@ -261,7 +262,7 @@ public interface UnitOfWork<T extends Message<?>> {
     }
 
     /**
-     * Attach a transaction to this Unit of Work, using the given {@code transactionManager}. The transaction will be
+     * Attach(缚上；系上；贴上） a transaction to this Unit of Work, using the given {@code transactionManager}. The transaction will be
      * managed in the lifecycle of this Unit of Work. Failure to start a transaction will cause this Unit of Work
      * to be rolled back.
      *

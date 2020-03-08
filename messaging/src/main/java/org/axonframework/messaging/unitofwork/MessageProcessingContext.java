@@ -30,7 +30,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 
 /**
- * Maintains the context around the processing of a single Message. This class notifies handlers when the Unit of Work
+ * Maintains维护 the context around the processing of a single Message. This class notifies handlers when the Unit of Work
  * processing the Message transitions to a new {@link Phase}.
  *
  * @author Rene de Waele

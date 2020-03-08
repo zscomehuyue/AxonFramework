@@ -34,6 +34,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -175,7 +176,6 @@ public class SimpleCommandBus implements CommandBus {
         UnitOfWork<CommandMessage<?>> unitOfWork = DefaultUnitOfWork.startAndGet(command);
         unitOfWork.attachTransaction(transactionManager);
         InterceptorChain chain = new DefaultInterceptorChain<>(unitOfWork, handlerInterceptors, handler);
-
         ResultMessage<Object> commandResult = unitOfWork.executeWithResult(chain::proceed, rollbackConfiguration);
 
         callback.onResult(command, GenericCommandResultMessage.<R>asCommandResultMessage(commandResult));

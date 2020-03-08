@@ -59,6 +59,9 @@ public abstract class AbstractUnitOfWork<T extends Message<?>> implements UnitOf
         CurrentUnitOfWork.set(this);
     }
 
+    /**
+     * 校验状态，切换场景，除非该场景，通知该场景的变更；
+     */
     @Override
     public void commit() {
         if (logger.isDebugEnabled()) {
@@ -77,6 +80,9 @@ public abstract class AbstractUnitOfWork<T extends Message<?>> implements UnitOf
         }
     }
 
+    /**
+     * 切换场景，执行该场景的相关处理器；
+     */
     private void commitAsRoot() {
         try {
             try {
@@ -94,10 +100,15 @@ public abstract class AbstractUnitOfWork<T extends Message<?>> implements UnitOf
         }
     }
 
+    /**
+     * 嵌套的
+     */
     private void commitAsNested() {
         try {
             changePhase(Phase.PREPARE_COMMIT, Phase.COMMIT);
             delegateAfterCommitToParent(this);
+
+            //FIXME 注册一个回滚场景；
             parentUnitOfWork.onRollback(u -> changePhase(Phase.ROLLBACK));
         } catch (Exception e) {
             setRollbackCause(e);

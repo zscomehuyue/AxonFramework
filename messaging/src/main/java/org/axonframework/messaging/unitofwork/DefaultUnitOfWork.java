@@ -62,7 +62,16 @@ public class DefaultUnitOfWork<T extends Message<?>> extends AbstractUnitOfWork<
         processingContext = new MessageProcessingContext<>(message);
     }
 
+    /**
+     * FIXME 命令处理器，真正执行的地方；
+     * @param task                  the task to execute
+     * @param rollbackConfiguration configuration that determines whether or not to rollback the unit of work when task
+     *                              execution fails
+     * @param <R>
+     * @return
+     */
     @Override
+    @SuppressWarnings("Duplicates")
     public <R> ResultMessage<R> executeWithResult(Callable<R> task, RollbackConfiguration rollbackConfiguration) {
         if (phase() == Phase.NOT_STARTED) {
             start();
@@ -71,6 +80,7 @@ public class DefaultUnitOfWork<T extends Message<?>> extends AbstractUnitOfWork<
         R result;
         ResultMessage<R> resultMessage;
         try {
+            //FIXME 执行handler的逻辑
             result = task.call();
             if (result instanceof ResultMessage) {
                 //noinspection Duplicates
