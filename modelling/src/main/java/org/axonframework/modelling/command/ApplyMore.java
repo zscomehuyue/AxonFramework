@@ -19,6 +19,7 @@ package org.axonframework.modelling.command;
 import java.util.function.Supplier;
 
 /**
+ * FIXME 该接口描述的是一种机制：当另外一个事件发布后，能启动运用一种额外的事件；
  * Interface that describes a mechanism that enables the application of an additional event after another event is
  * applied.
  * <p>

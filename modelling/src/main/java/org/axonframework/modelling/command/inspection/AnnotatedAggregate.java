@@ -366,6 +366,7 @@ public class AnnotatedAggregate<T> extends AggregateLifecycle implements Aggrega
     }
 
     /**
+     * FIXME eventBus 发布事件；eventBus入口
      * Publish an event to the aggregate root and its entities first and external event handlers (using the given
      * event bus) later.
      *

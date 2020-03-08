@@ -23,6 +23,7 @@ import org.axonframework.messaging.ScopeDescriptor;
 import java.util.concurrent.Callable;
 
 /**
+ * FIXME 聚合根生命周期
  * Abstract base class of a component that models an aggregate's life cycle.
  */
 public abstract class AggregateLifecycle extends Scope {
@@ -30,7 +31,7 @@ public abstract class AggregateLifecycle extends Scope {
     /**
      * Apply a {@link org.axonframework.eventhandling.DomainEventMessage} with given payload and metadata (metadata
      * from interceptors will be combined with the provided metadata). Applying events means they are immediately
-     * applied (published) to the aggregate and scheduled for publication to other event handlers.
+     * applied (FIXME published) to the aggregate and scheduled for publication to other event handlers.
      * <p/>
      * The event is applied on all entities part of this aggregate. If the event is applied from an event handler of the
      * aggregate and additional events need to be applied that depends on state changes brought about by the first event
@@ -148,6 +149,7 @@ public abstract class AggregateLifecycle extends Scope {
     protected abstract void doMarkDeleted();
 
     /**
+     * FIXME 发布一个事件，立即或者定时发布事件；
      * Apply a {@link org.axonframework.eventhandling.DomainEventMessage} with given payload and metadata (metadata from
      * interceptors will be combined with the provided metadata). The event should be applied to the aggregate
      * immediately and scheduled for publication to other event handlers.
