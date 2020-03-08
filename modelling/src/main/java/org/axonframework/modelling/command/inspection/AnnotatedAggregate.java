@@ -406,7 +406,7 @@ public class AnnotatedAggregate<T> extends AggregateLifecycle implements Aggrega
         return executeWithResult(messageHandling);
     }
 
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings({"unchecked","Duplicates"})
     private Object handle(CommandMessage<?> commandMessage) throws Exception {
         List<AnnotatedCommandHandlerInterceptor<? super T>> interceptors =
                 inspector.commandHandlerInterceptors((Class<? extends T>) aggregateRoot.getClass())

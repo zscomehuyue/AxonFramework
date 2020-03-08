@@ -26,10 +26,14 @@ import java.util.Iterator;
  * @param <T> The message type this interceptor chain can process
  * @author Allard Buijze
  * @since 0.5
+ * FIXME 该拦截练持有了，执行上下文的，资源；
  */
 public class DefaultInterceptorChain<T extends Message<?>> implements InterceptorChain {
 
+    //FIXME
     private final MessageHandler<? super T> handler;
+
+    //FIXME 类似一个cache缓存了，所有的拦截器；
     private final Iterator<? extends MessageHandlerInterceptor<? super T>> chain;
     private final UnitOfWork<? extends T> unitOfWork;
 
@@ -49,6 +53,11 @@ public class DefaultInterceptorChain<T extends Message<?>> implements Intercepto
         this.unitOfWork = unitOfWork;
     }
 
+    /**
+     * 没有使用for循环，来执行全部的拦截器；简洁，但是又是如何全部执行的；
+     * @return
+     * @throws Exception
+     */
     @Override
     public Object proceed() throws Exception {
         if (chain.hasNext()) {

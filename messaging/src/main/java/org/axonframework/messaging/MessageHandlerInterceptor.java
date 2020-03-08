@@ -45,6 +45,8 @@ public interface MessageHandlerInterceptor<T extends Message<?>> {
      * @return the result of the message handler. May have been modified by interceptors.
      *
      * @throws Exception any exception that occurs while handling the message
+     * FIXME 自定义拦截器练，通过拦截器持有拦截器练，避免通过for循环，实现了拦截器练的执行；
+     * FIXME 使用的连接器练的模式？？对拦截器来说，通过方法持有了，执行需要的相关参数；这样设计比较好；避免过多的依赖问题；也增加了灵活性；
      */
     Object handle(UnitOfWork<? extends T> unitOfWork, InterceptorChain interceptorChain) throws Exception;
 }
