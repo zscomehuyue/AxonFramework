@@ -39,6 +39,7 @@ import java.util.concurrent.TimeUnit;
  * @author Allard Buijze
  * @since 2.0
  */
+@SuppressWarnings({"unchecked","Duplicates"})
 public class DefaultCommandGateway extends AbstractCommandGateway implements CommandGateway {
 
     private static final Logger logger = LoggerFactory.getLogger(DefaultCommandGateway.class);
@@ -84,7 +85,6 @@ public class DefaultCommandGateway extends AbstractCommandGateway implements Com
      *                                                                     exception
      */
     @Override
-    @SuppressWarnings("unchecked")
     public <R> R sendAndWait(Object command) {
         FutureCallback<Object, R> futureCallback = new FutureCallback<>();
         send(command, futureCallback);
@@ -110,7 +110,6 @@ public class DefaultCommandGateway extends AbstractCommandGateway implements Com
      *                                                                     exception
      */
     @Override
-    @SuppressWarnings("unchecked")
     public <R> R sendAndWait(Object command, long timeout, TimeUnit unit) {
         FutureCallback<Object, R> futureCallback = new FutureCallback<>();
         send(command, futureCallback);
