@@ -66,6 +66,7 @@ public abstract class AggregateLifecycle extends Scope {
     }
 
     /**
+     *  FIXME 创建聚合对象，使用到了Repository；eventStore
      * Creates a new aggregate instance. In order for new aggregate to be created, a {@link Repository} should be
      * available to the current aggregate. {@link Repository} of an aggregate to be created is exposed to the current
      * aggregate via {@link RepositoryProvider}.

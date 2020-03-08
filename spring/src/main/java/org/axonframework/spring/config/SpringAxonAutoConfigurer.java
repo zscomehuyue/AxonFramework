@@ -123,6 +123,7 @@ import static org.springframework.beans.factory.support.BeanDefinitionBuilder.ge
  * @author Allard Buijze
  * @since 3.0
  */
+@SuppressWarnings({"Duplicates","non-bundle","OSGi","unchecked"})
 public class SpringAxonAutoConfigurer implements ImportBeanDefinitionRegistrar, BeanFactoryAware {
 
     /**
@@ -148,6 +149,7 @@ public class SpringAxonAutoConfigurer implements ImportBeanDefinitionRegistrar, 
         registry.registerBeanDefinition("queryHandlerSubscriber",
                                         genericBeanDefinition(QueryHandlerSubscriber.class).getBeanDefinition());
 
+        //组件默认初始化
         Configurer configurer = DefaultConfigurer.defaultConfiguration(false);
 
         RuntimeBeanReference parameterResolver =

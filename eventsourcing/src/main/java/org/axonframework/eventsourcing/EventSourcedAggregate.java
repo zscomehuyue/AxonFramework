@@ -248,6 +248,10 @@ public class EventSourcedAggregate<T> extends AnnotatedAggregate<T> {
         }
     }
 
+    /**
+     * 异步存储了event
+     * @param msg the event message to publish
+     */
     @Override
     protected void publish(EventMessage<?> msg) {
         super.publish(msg);

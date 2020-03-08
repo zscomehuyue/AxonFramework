@@ -242,6 +242,7 @@ public class DefaultConfigurer implements Configurer {
 
     /**
      * Initialize the Configurer.
+     * 组件默认初始化
      */
     protected DefaultConfigurer() {
         components.put(ParameterResolverFactory.class,
