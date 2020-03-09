@@ -110,6 +110,12 @@ public class AxonAutoConfiguration implements BeanClassLoaderAware {
         return new AnnotationRevisionResolver();
     }
 
+    /**
+     * FIXME 序列化抽象一个对象；这样直接从该接口，获取data；底层可以随意切换实现类；
+     * FIXME msg event 可以使用不同的序列化方式；
+     * @param revisionResolver
+     * @return
+     */
     @Bean
     @Primary
     @ConditionalOnMissingQualifiedBean(beanClass = Serializer.class, qualifier = "!eventSerializer,messageSerializer")
@@ -179,6 +185,7 @@ public class AxonAutoConfiguration implements BeanClassLoaderAware {
         return new MessageOriginProvider();
     }
 
+    //FIXME 生产上改成 AxonServerEventStore，先创建该bean，就可以替换了；
     @Qualifier("eventStore")
     @Bean(name = "eventBus")
     @ConditionalOnMissingBean(EventBus.class)
@@ -293,6 +300,7 @@ public class AxonAutoConfiguration implements BeanClassLoaderAware {
         return LoggingDuplicateCommandHandlerResolver.instance();
     }
 
+    //FIXME 生产上改成 DisruptorCommandBus，先创建该bean，就可以替换了；
     @ConditionalOnMissingBean(
             ignoredType = {
                     "org.axonframework.commandhandling.distributed.DistributedCommandBus",

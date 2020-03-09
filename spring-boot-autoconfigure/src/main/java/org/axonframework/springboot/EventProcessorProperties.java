@@ -16,7 +16,6 @@
 
 package org.axonframework.springboot;
 
-import org.axonframework.eventhandling.TrackingEventProcessorConfiguration;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.util.HashMap;

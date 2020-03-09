@@ -17,6 +17,7 @@
 package org.axonframework.serialization;
 
 /**
+ * 解决修订
  * Interface towards a mechanism that resolves the revision of a given payload type. Based on this revision, a
  * component is able to recognize whether a serialized version of the payload is compatible with the
  * currently known version of the payload.
