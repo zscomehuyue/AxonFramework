@@ -43,6 +43,10 @@ import javax.persistence.EntityManagerFactory;
 @AutoConfigureAfter(AxonServerAutoConfiguration.class)
 public class JpaEventStoreAutoConfiguration {
 
+
+
+
+
     @Bean
     public EventStorageEngine eventStorageEngine(Serializer defaultSerializer,
                                                  PersistenceExceptionResolver persistenceExceptionResolver,

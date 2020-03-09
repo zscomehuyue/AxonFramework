@@ -25,6 +25,13 @@ import org.springframework.context.annotation.Configuration;
 
 /**
  * Auto configuration for {@link EventProcessingModule}.
+ * FIXME 事件处理配置，需要存储数据；存储使用的orm，是hibernate；
+ * FIXME JPA配置
+ *      <dependency>
+ *         <groupId>org.springframework.boot</groupId>
+ *         <artifactId>spring-boot-starter-data-jpa</artifactId>
+ *      </dependency>
+ *
  *
  * @author Milan Savic
  * @since 4.0
@@ -39,6 +46,9 @@ import org.springframework.context.annotation.Configuration;
 })
 public class EventProcessingAutoConfiguration {
 
+    /**
+     *  FIXME 事件处理模块，注册所有的配置组件，及依赖组件，延迟初始化；
+     */
     @Bean
     @ConditionalOnMissingBean({EventProcessingModule.class, EventProcessingConfiguration.class})
     public EventProcessingModule eventProcessingModule() {

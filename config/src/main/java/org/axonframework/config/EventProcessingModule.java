@@ -73,8 +73,7 @@ import static org.axonframework.common.annotation.AnnotationUtils.findAnnotation
  * @author Milan Savic
  * @since 4.0
  */
-public class EventProcessingModule
-        implements ModuleConfiguration, EventProcessingConfiguration, EventProcessingConfigurer {
+public class EventProcessingModule implements ModuleConfiguration, EventProcessingConfiguration, EventProcessingConfigurer {
 
     private final List<TypeProcessingGroupSelector> typeSelectors = new ArrayList<>();
     private final List<InstanceProcessingGroupSelector> instanceSelectors = new ArrayList<>();

@@ -29,6 +29,7 @@ import java.util.stream.Stream;
 import static java.util.Arrays.asList;
 
 /**
+ * FIXME 事件存储、获取的接口服务；
  * Provides a mechanism to append as well as retrieve events from an underlying storage like a database. An event
  * storage engine can also be used to store and fetch aggregate snapshot events.
  *
