@@ -77,6 +77,7 @@ public class AxonServerAutoConfiguration implements ApplicationContextAware {
 
     /**
      * grpc 相关配置参数类：AxonServerConfiguration
+     * axon-3。0。4 使用jgroups群组通信，并没有使用axon server；
      * @return
      */
     @Bean

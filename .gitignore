@@ -15,7 +15,7 @@ axon.iws
 .project
 .settings/
 .factorypath
-
+*.class
 events/
 
 # MacOS makes this one
