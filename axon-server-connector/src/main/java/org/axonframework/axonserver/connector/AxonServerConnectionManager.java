@@ -227,6 +227,7 @@ public class AxonServerConnectionManager {
             }
             boolean axonServerUnavailable = false;
 
+            //axon server Grpc 参数配置：NodeInfo
             for (NodeInfo nodeInfo : axonServerConfiguration.routingServers()) {
                 ManagedChannel candidate = createChannel(nodeInfo.getHostName(), nodeInfo.getGrpcPort());
                 PlatformServiceGrpc.PlatformServiceBlockingStub stub =
