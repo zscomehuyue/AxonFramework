@@ -75,6 +75,10 @@ public class AxonServerAutoConfiguration implements ApplicationContextAware {
 
     private ApplicationContext applicationContext;
 
+    /**
+     * grpc 相关配置参数类：AxonServerConfiguration
+     * @return
+     */
     @Bean
     public AxonServerConfiguration axonServerConfiguration() {
         AxonServerConfiguration configuration = new AxonServerConfiguration();
