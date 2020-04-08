@@ -421,7 +421,7 @@ public class AxonServerConnectionManager {
                     @Override
                     public void onError(Throwable throwable) {
                         logger.warn("Lost instruction stream from [{}] - {}", name, throwable.getMessage());
-
+                        completeRequestStream();
                         notifyConnectionChange(disconnectListeners, context);
                         if (throwable instanceof StatusRuntimeException) {
                             StatusRuntimeException sre = (StatusRuntimeException) throwable;
@@ -435,6 +435,7 @@ public class AxonServerConnectionManager {
                     @Override
                     public void onCompleted() {
                         logger.info("Closed instruction stream to [{}]", name);
+                        completeRequestStream();
                         notifyConnectionChange(disconnectListeners, context);
                         scheduleReconnect(context, true);
                     }
@@ -727,6 +728,7 @@ public class AxonServerConnectionManager {
     @ShutdownHandler(phase = Phase.EXTERNAL_CONNECTIONS)
     public void shutdown() {
         shutdown = true;
+        instructionStreams.values().forEach(StreamObserver::onCompleted);
         disconnect();
         scheduler.shutdown();
     }

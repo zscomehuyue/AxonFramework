@@ -575,8 +575,10 @@ public class EventProcessingModule implements ModuleConfiguration, EventProcessi
     public EventProcessingConfigurer registerHandlerInterceptor(String processorName,
                                                                 Function<Configuration, MessageHandlerInterceptor<? super EventMessage<?>>> interceptorBuilder) {
         if (configuration != null) {
-            eventProcessor(processorName).ifPresent(eventProcessor -> eventProcessor
-                    .registerHandlerInterceptor(interceptorBuilder.apply(configuration)));
+            Component<EventProcessor> eps = eventProcessors.get(processorName);
+            if (eps != null && eps.isInitialized()) {
+                eps.get().registerHandlerInterceptor(interceptorBuilder.apply(configuration));
+            }
         }
         this.handlerInterceptorsBuilders.computeIfAbsent(processorName, k -> new ArrayList<>())
                                         .add(interceptorBuilder);
